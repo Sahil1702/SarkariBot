@@ -1,7 +1,18 @@
+from flask import Flask 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from dotenv import load_dotenv
-import sqlite3, os
+import sqlite3, os, threading
+
+app_web = Flask(__name__)
+@app_web.route('/')
+def home():
+    return "SarkariBot is Live!"
+
+def run_web():
+    app_web.run(host="0.0.0.0", port=10000)
+
+threading.Thread(target=run_web).start()
 
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
