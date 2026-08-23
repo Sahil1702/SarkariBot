@@ -16,8 +16,12 @@ threading.Thread(target=run_web).start()
 
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+ADMIN_ID = os.getenv("ADMIN_ID")
 
+if not TOKEN:
+    raise ValueError("BOT_TOKEN not found! Set it in Render Environment")
+
+ADMIN_ID = int(ADMIN_ID) if ADMIN_ID else 0
 
 conn = sqlite3.connect("pyq.db", check_same_thread=False)
 cur = conn.cursor()
