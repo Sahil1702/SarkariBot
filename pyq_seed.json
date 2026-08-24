@@ -1,0 +1,22 @@
+{
+  "Banking": [],
+  "Railway": [],
+  "UPSC": [],
+  "UPPSC RO/ARO": [],
+  "AHC RO/ARO": [],
+  "UPSSSC": [],
+  "OPSC": [
+    {
+      "question": "Real question text here",
+      "options": ["A option", "B option", "C option", "D option"],
+      "answer": "A"
+    }
+  ],
+  "Odisha Police": [
+    {
+      "question": "Real question text here",
+      "options": ["A option", "B option", "C option", "D option"],
+      "answer": "B"
+    }
+  ]
+}
