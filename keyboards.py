@@ -7,7 +7,7 @@ SUB_CATS = {
     "Banking": ["IBPS PO", "IBPS Clerk", "SBI PO", "SBI Clerk"],
     "Railway": ["RRB NTPC", "RRB Group D", "RRB JE"],
     "UPSC": ["UPSC Prelims", "UPSC Mains"],
-    "State Exams": ["UP Police", "UPPSC", "MPPSC", "BPSC"]
+    "State Exams": ["UPPSC RO/ARO", "UPPSC PCS Pre", "AHC RO/ARO", "UP Police"]
 }
 
 YEARS = ["2024", "2023", "2022", "2021", "2020"]
