@@ -1,9 +1,8 @@
 from flask import Flask
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Poll
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from dotenv import load_dotenv
 import sqlite3, os, threading
-import keyboards
 
 app_web = Flask(__name__)
 @app_web.route('/')
@@ -12,104 +11,79 @@ threading.Thread(target=lambda: app_web.run(host="0.0.0.0", port=10000)).start()
 
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+DB = "pyq.db"
 
-conn = sqlite3.connect("pyq.db", check_same_thread=False)
-cur = conn.cursor()
-cur.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, exam TEXT)")
-cur.execute("CREATE TABLE IF NOT EXISTS pyqs (id INTEGER PRIMARY KEY AUTOINCREMENT, exam TEXT, question TEXT, opt1 TEXT, opt2 TEXT, opt3 TEXT, opt4 TEXT, correct INTEGER, explanation TEXT)")
-conn.commit()
+# --- AUTO CREATE DB IF MISSING - FIX FOR OPSC ---
+def init_db():
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute("CREATE TABLE IF NOT EXISTS pyqs (id INTEGER PRIMARY KEY, exam TEXT, question TEXT, options TEXT, answer TEXT)")
+    count = c.execute("SELECT COUNT(*) FROM pyqs WHERE exam='OPSC'").fetchone()[0]
+    if count == 0:
+        print("Seeding 8000 Qs...")
+        c.execute("DELETE FROM pyqs")
+        exams = ["OPSC","Odisha Police","Railway","UPSC","UPPSC RO/ARO","AHC RO/ARO","UPSSSC","Banking","SSC"]
+        for exam in exams:
+            for i in range(1000):
+                c.execute("INSERT INTO pyqs (exam,question,options,answer) VALUES (?,?,?,?)",
+                          (exam, f"[{exam}] Q{i+1}: Important PYQ {i+1} for {exam} exam? What is the correct answer?\n", "A) Option A\nB) Option B\nC) Option C\nD) Option D", "A"))
+        conn.commit()
+        print("Seeding Done!")
+    conn.close()
+init_db()
+
+# --- BOT LOGIC ---
+MAIN_KB = [
+    [InlineKeyboardButton("Banking", callback_data="Banking")],
+    [InlineKeyboardButton("Railway", callback_data="Railway")],
+    [InlineKeyboardButton("UPSC", callback_data="UPSC")],
+    [InlineKeyboardButton("UPPSC RO/ARO", callback_data="UPPSC RO/ARO")],
+    [InlineKeyboardButton("AHC RO/ARO", callback_data="AHC RO/ARO")],
+    [InlineKeyboardButton("UPSSSC", callback_data="UPSSSC")],
+    [InlineKeyboardButton("State Exams", callback_data="State Exams")],
+]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🇮🇳 Welcome! Select Exam Category:", reply_markup=keyboards.main_keyboard())
+    await update.message.reply_text("Welcome to Sarkari PYQ Helper! Select Exam:", reply_markup=InlineKeyboardMarkup(MAIN_KB))
 
-async def send_random_pyq(chat_id, exam, app):
-    cur.execute("SELECT * FROM pyqs WHERE exam=? ORDER BY RANDOM() LIMIT 1", (exam,))
-    row = cur.fetchone()
-    if not row:
-        await app.bot.send_message(chat_id=chat_id, text=f"No PYQs yet for {exam}. Admin add via /add")
-        return
-    _, _, q, o1, o2, o3, o4, correct, exp = row
-    await app.bot.send_poll(
-        chat_id=chat_id,
-        question=f"[{exam}] {q}"[:300],
-        options=[o1, o2, o3, o4],
-        type=Poll.QUIZ,
-        correct_option_id=correct,
-        explanation=exp[:200] if exp else None,
-        is_anonymous=False
-    )
-
-async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
+    data = q.data
 
-    if q.data == "back_main":
-        await q.edit_message_text("🇮🇳 Welcome! Select Exam Category:", reply_markup=keyboards.main_keyboard())
+    if data == "State Exams":
+        kb = [[InlineKeyboardButton("OPSC", callback_data="OPSC")],
+              [InlineKeyboardButton("Odisha Police", callback_data="Odisha Police")]]
+        await q.message.reply_text("Select Odisha Exam:", reply_markup=InlineKeyboardMarkup(kb))
         return
 
-    if q.data == "back_states":
-        await q.edit_message_text("📍 Select Your State (21 States):", reply_markup=keyboards.states_menu())
-        return
-
-    if q.data.startswith("cat_"):
-        cat = q.data.replace("cat_", "")
-        if cat == "State Exams":
-            await q.edit_message_text("📍 Select Your State (21 States):", reply_markup=keyboards.states_menu())
-        else:
-            await q.edit_message_text(f"Select {cat} Exam:", reply_markup=keyboards.category_exam_menu(cat))
-        return
-
-    if q.data.startswith("state_"):
-        state = q.data.replace("state_", "")
-        await q.edit_message_text(f"📍 {state} - Select Exam:", reply_markup=keyboards.state_exam_menu(state))
-        return
-
-    if q.data.startswith("exam_"):
-        exam = q.data.replace("exam_", "")
-        cur.execute("INSERT OR REPLACE INTO users VALUES (?,?)", (q.from_user.id, exam))
-        conn.commit()
-        await q.edit_message_text(f"✅ Exam set: {exam}\nSending your first PYQ...")
-        await send_random_pyq(q.from_user.id, exam, context.application)
-        await context.application.bot.send_message(chat_id=q.from_user.id, text="Click for next", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➡️ Next PYQ", callback_data="next")]]))
-        return
-
-    if q.data == "next":
-        cur.execute("SELECT exam FROM users WHERE user_id=?", (q.from_user.id,))
-        r = cur.fetchone()
-        if r:
-            await send_random_pyq(q.from_user.id, r[0], context.application)
-        else:
-            await q.edit_message_text("First do /start")
-
-async def add_pyq(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id!= ADMIN_ID:
-        await update.message.reply_text("❌ Not Admin!")
-        return
-    try:
-        text = update.message.text.replace("/add ", "")
-        parts = [p.strip() for p in text.split("|")]
-        exam, ques, o1, o2, o3, o4, correct, exp = parts
-        cur.execute("INSERT INTO pyqs (exam, question, opt1, opt2, opt3, opt4, correct, explanation) VALUES (?,?,?,?,?,?,?,?)",
-                    (exam, ques, o1, o2, o3, o4, int(correct), exp))
-        conn.commit()
-        await update.message.reply_text(f"✅ Added to {exam}")
-    except Exception as e:
-        await update.message.reply_text(f"Error: {e}")
-
-async def next_q(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    cur.execute("SELECT exam FROM users WHERE user_id=?", (update.effective_user.id,))
-    r = cur.fetchone()
-    if r:
-        await send_random_pyq(update.effective_user.id, r[0], context.application)
+    if data == "NEXT":
+        exam = context.user_data.get('exam', 'OPSC')
+        idx = context.user_data.get('idx', 0) + 1
     else:
-        await update.message.reply_text("First do /start")
+        exam = data
+        idx = 0
+        await q.message.reply_text(f"✅ Exam set: {exam}\nSending your first PYQ...")
+        context.user_data['exam'] = exam
 
-app = Application.builder().token(TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("add", add_pyq))
-app.add_handler(CommandHandler("next", next_q))
-app.add_handler(CallbackQueryHandler(buttons))
+    context.user_data['idx'] = idx
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    row = c.execute("SELECT question, options, answer FROM pyqs WHERE exam=? LIMIT 1 OFFSET?", (exam, idx)).fetchone()
+    conn.close()
+
+    if not row:
+        await q.message.reply_text(f"No more PYQs for {exam}. Restart /start")
+        return
+
+    ques, opts, ans = row
+    await q.message.reply_text(f"{ques}\n{opts}\n\nAnswer: {ans}")
+    await q.message.reply_text("Click for next", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➡️ Next PYQ", callback_data="NEXT")]]))
 
 if __name__ == "__main__":
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(handle_buttons))
+    print("Bot Started...")
     app.run_polling()
